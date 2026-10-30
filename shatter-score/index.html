@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en"><head>
+<style id="hub-shell-css">/* Games hub shell (exit + pause) - injected into every game page by build_hub.py */
+.hub-shell-bar{position:fixed;top:0;left:0;right:0;z-index:2147483000;display:flex;justify-content:space-between;align-items:flex-start;
+ padding:calc(env(safe-area-inset-top,0px) + 8px) calc(env(safe-area-inset-right,0px) + 8px) 0 calc(env(safe-area-inset-left,0px) + 8px);pointer-events:none}
+.hub-btn{pointer-events:auto;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(10,6,20,.55);color:#fff;
+ font:700 15px/1 system-ui,sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;
+ box-shadow:0 2px 10px rgba(0,0,0,.4);backdrop-filter:blur(4px);touch-action:manipulation;user-select:none;padding:0;margin:0}
+.hub-btn:active{transform:scale(.92)}
+.hub-paused .hub-pause{background:#ff3fa4;border-color:#ff3fa4}
+.hub-overlay{position:fixed;inset:0;z-index:2147483001;display:none;align-items:center;justify-content:center;background:#07050c;color:#fff;
+ font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;touch-action:none}
+.hub-overlay.hub-show{display:flex}
+.hub-confirm{background:rgba(7,5,12,.92)}
+.hub-card{width:min(86vw,360px);text-align:center;padding:28px 22px;border-radius:20px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14)}
+.hub-title{font-size:30px;font-weight:900;letter-spacing:2px;text-shadow:0 0 18px #ff3fa4,0 0 40px #7b2cff;margin:0 0 8px}
+.hub-sub{color:#c9b8ff;font-size:14px;line-height:1.4;margin:0 0 22px}
+.hub-big{display:block;width:100%;margin:10px 0 0;padding:15px 0;border:0;border-radius:999px;font:900 17px/1 system-ui,sans-serif;letter-spacing:1.5px;cursor:pointer;
+ -webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.hub-resume{background:linear-gradient(135deg,#ff3fa4,#ff8a00);color:#1a0a2e;box-shadow:0 6px 18px rgba(255,63,164,.45)}
+.hub-leave{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.25)}
+</style>
+<script id="hub-shell-js">/* Games hub shell: Exit + Pause on every game page. Injected by build_hub.py at the TOP of <head>, before any game code,
+   so it can freeze the game's clock (performance.now / Date.now), animation frames, timers and sound without touching the game.
+   Ofir 2026-10-29: exit asks "Leave to lobby?" first; pause overlay hides the board (no free thinking time in a score race).
+   Pause is a playtest convenience only - it must not exist in cash tournaments. */
+(function () {
+  if (window.__HUBSHELL) return;
+  var paused = false, pausedAt = 0, offset = 0, listeners = [];
+  var _now = performance.now.bind(performance), _dateNow = Date.now, _raf = window.requestAnimationFrame.bind(window);
+  var _setTimeout = window.setTimeout.bind(window), _setInterval = window.setInterval.bind(window);
+  var pendingRaf = [], deferred = [], contexts = [], audios = [];
+
+  performance.now = function () { return (paused ? pausedAt : _now()) - offset; };
+  Date.now = function () { return _dateNow() - (paused ? _now() - pausedAt : 0) - offset; };
+  window.requestAnimationFrame = function (cb) {
+    return _raf(function (ts) {
+      if (paused) { pendingRaf.push(cb); return; }
+      cb(ts - offset);
+    });
+  };
+  window.setTimeout = function (fn, ms) {
+    var args = Array.prototype.slice.call(arguments, 2);
+    return _setTimeout(function () {
+      if (typeof fn !== 'function') return;
+      if (paused) deferred.push(function () { fn.apply(null, args); }); else fn.apply(null, args);
+    }, ms);
+  };
+  window.setInterval = function (fn, ms) {
+    var args = Array.prototype.slice.call(arguments, 2);
+    return _setInterval(function () { if (!paused && typeof fn === 'function') fn.apply(null, args); }, ms);
+  };
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (AC) {
+    var Wrapped = function () { var ctx = new AC(arguments[0]); contexts.push(ctx); return ctx; };
+    Wrapped.prototype = AC.prototype;
+    window.AudioContext = Wrapped; if (window.webkitAudioContext) window.webkitAudioContext = Wrapped;
+  }
+  var _Audio = window.Audio;
+  if (_Audio) {
+    window.Audio = function (src) { var a = new _Audio(src); audios.push(a); return a; };
+    window.Audio.prototype = _Audio.prototype;
+  }
+
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  var ui = {};
+  function mount() {
+    if (ui.bar) return;
+    var bar = el('div', 'hub-shell-bar'); bar.id = 'hub-shell';
+    var exitB = el('button', 'hub-btn hub-exit', '&#10005;'); exitB.id = 'hub-exit'; exitB.title = 'Back to the lobby'; exitB.setAttribute('aria-label', 'Exit to lobby');
+    var pauseB = el('button', 'hub-btn hub-pause', '&#10074;&#10074;'); pauseB.id = 'hub-pause'; pauseB.title = 'Pause'; pauseB.setAttribute('aria-label', 'Pause');
+    bar.appendChild(exitB); bar.appendChild(pauseB);
+    var ov = el('div', 'hub-overlay'); ov.id = 'hub-overlay';
+    ov.innerHTML = '<div class="hub-card"><div class="hub-title">PAUSED</div><div class="hub-sub">The board is hidden while paused.<br>(No pause in real tournaments.)</div>' +
+      '<button class="hub-big hub-resume" id="hub-resume">RESUME</button><button class="hub-big hub-leave" id="hub-leave">EXIT TO LOBBY</button></div>';
+    var cf = el('div', 'hub-overlay hub-confirm'); cf.id = 'hub-confirm';
+    cf.innerHTML = '<div class="hub-card"><div class="hub-title">Leave to lobby?</div><div class="hub-sub">Your current round will be lost.</div>' +
+      '<button class="hub-big hub-leave" id="hub-confirm-yes">LEAVE</button><button class="hub-big hub-resume" id="hub-confirm-no">STAY</button></div>';
+    document.body.appendChild(bar); document.body.appendChild(ov); document.body.appendChild(cf);
+    ui = { bar: bar, ov: ov, cf: cf };
+    exitB.addEventListener('click', function (e) { e.stopPropagation(); askExit(); });
+    pauseB.addEventListener('click', function (e) { e.stopPropagation(); paused ? resume() : pause(); });
+    document.getElementById('hub-resume').addEventListener('click', function (e) { e.stopPropagation(); resume(); });
+    document.getElementById('hub-leave').addEventListener('click', function (e) { e.stopPropagation(); exit(); });
+    document.getElementById('hub-confirm-yes').addEventListener('click', function (e) { e.stopPropagation(); exit(); });
+    document.getElementById('hub-confirm-no').addEventListener('click', function (e) { e.stopPropagation(); cf.classList.remove('hub-show'); if (ui.confirmPaused) resume(); });
+    // taps on the overlays must never reach the game canvas
+    [ov, cf].forEach(function (o) { ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'].forEach(function (t) {
+      o.addEventListener(t, function (e) { e.stopPropagation(); }, false); }); });
+  }
+  function pause() {
+    if (paused) return;
+    paused = true; pausedAt = _now();
+    contexts.forEach(function (c) { try { if (c.state === 'running') { c.__hubSuspended = true; c.suspend(); } } catch (e) {} });
+    var all = audios.concat(Array.prototype.slice.call(document.querySelectorAll('audio')));
+    all.forEach(function (a) { try { if (!a.paused) { a.__hubPlaying = true; a.pause(); } } catch (e) {} });
+    mount(); ui.ov.classList.add('hub-show'); ui.bar.classList.add('hub-paused');
+    listeners.forEach(function (f) { f(true); });
+  }
+  function resume() {
+    if (!paused) return;
+    offset += _now() - pausedAt; paused = false;
+    mount(); ui.ov.classList.remove('hub-show'); ui.cf.classList.remove('hub-show'); ui.bar.classList.remove('hub-paused'); ui.confirmPaused = false;
+    contexts.forEach(function (c) { try { if (c.__hubSuspended) { c.__hubSuspended = false; c.resume(); } } catch (e) {} });
+    audios.concat(Array.prototype.slice.call(document.querySelectorAll('audio'))).forEach(function (a) { try { if (a.__hubPlaying) { a.__hubPlaying = false; a.play(); } } catch (e) {} });
+    var d = deferred; deferred = []; d.forEach(function (f) { try { f(); } catch (e) {} });
+    var r = pendingRaf; pendingRaf = []; r.forEach(function (cb) { _raf(function (ts) { cb(ts - offset); }); });
+    listeners.forEach(function (f) { f(false); });
+  }
+  function askExit() { mount(); if (!paused) { ui.confirmPaused = true; pause(); ui.ov.classList.remove('hub-show'); } ui.cf.classList.add('hub-show'); }
+  function exit() { window.location.href = '../index.html'; }
+  document.addEventListener('visibilitychange', function () { if (document.hidden && !paused) pause(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
+  window.__HUBSHELL = { pause: pause, resume: resume, exit: exit, askExit: askExit, isPaused: function () { return paused; },
+    onChange: function (f) { listeners.push(f); }, audioContexts: function () { return contexts; }, version: 1 };
+})();
+</script>
+
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shatter Score - Neon Carnival v17</title>
+<style>
+:root { --bg: #07050c; --fg: #e8e0ff; --accent: #ffd166; color-scheme: dark; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; font-family: system-ui, sans-serif; }
+#wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+#unity-canvas { display: block; touch-action: none; background: var(--bg); }
+#loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; pointer-events: none; }
+#bar { width: 60%; max-width: 320px; height: 8px; background: #1d1830; border-radius: 4px; overflow: hidden; }
+#fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#msg { font-size: 14px; opacity: .8; text-align: center; padding: 0 24px; }
+</style>
+</head><body>
+<div id="wrap"><canvas id="unity-canvas" tabindex="-1"></canvas></div>
+<div id="loading"><div id="bar"><div id="fill"></div></div><div id="msg">Loading the neon carnival...</div></div>
+<script>
+(function () {
+  var canvas = document.getElementById('unity-canvas'), fill = document.getElementById('fill'), msg = document.getElementById('msg'), loading = document.getElementById('loading');
+  function size() {
+    var w = window.innerWidth, h = window.innerHeight, want = 9 / 16;
+    var cw = w, ch = Math.round(w / want); if (ch > h) { ch = h; cw = Math.round(h * want); }
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    var dpr = Math.min(window.devicePixelRatio || 1, 2); canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  }
+  size(); window.addEventListener('resize', size);
+  var cfg = {
+    dataUrl: 'Build/game-data.wasm', frameworkUrl: 'Build/game-framework.wasm', codeUrl: 'Build/game-code.wasm',
+    streamingAssetsUrl: 'StreamingAssets', companyName: 'Play Perfect', productName: 'Shatter Score', productVersion: '0.17.0',
+    devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2)
+  };
+  window.__HUB = { ready: false, error: null };
+  var s = document.createElement('script'); s.src = 'Build/game.loader.js';
+  s.onload = function () {
+    createUnityInstance(canvas, cfg, function (p) { fill.style.width = Math.round(p * 100) + '%'; })
+      .then(function () { loading.style.display = 'none'; window.__HUB.ready = true; })
+      .catch(function (e) { msg.textContent = 'Could not start: ' + e; window.__HUB.error = String(e); });
+  };
+  s.onerror = function () { msg.textContent = 'Could not load the game files.'; window.__HUB.error = 'loader missing'; };
+  document.body.appendChild(s);
+})();
+</script>
+</body></html>
