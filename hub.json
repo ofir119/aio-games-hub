@@ -1,0 +1,64 @@
+{
+ "built": "2026-11-09T13:57:50+00:00",
+ "prefix": "origin/",
+ "games": [
+  {
+   "id": "shatter-score",
+   "name": "Shatter Score",
+   "branch": "loop/shatter-score",
+   "entry": "2026-11-02-neon-carnival-v18-2-web",
+   "kind": "folder",
+   "path": "features/shatter-score/web/2026-11-02-neon-carnival-v18-2-web",
+   "version": "v18.2",
+   "date": "2026-11-02",
+   "source": "latest.json",
+   "sha": "e21dabb8",
+   "pushed": "2026-11-02T16:36:51+02:00",
+   "bytes": 39070417
+  },
+  {
+   "id": "neon-derby",
+   "name": "Neon Derby",
+   "branch": "loop/neon-derby",
+   "entry": "2026-10-29-neon-derby-v6-6-tutorial-phone.html",
+   "kind": "file",
+   "path": "features/neon-derby/phone/2026-10-29-neon-derby-v6-6-tutorial-phone.html",
+   "version": "v6.6",
+   "date": "2026-10-29",
+   "source": "latest.json",
+   "sha": "51f0ce23",
+   "pushed": "2026-10-30T22:05:11+02:00",
+   "wrapped": true,
+   "bytes": 2381565
+  },
+  {
+   "id": "whack-attack",
+   "name": "Whack Attack",
+   "branch": "loop/whack-attack",
+   "entry": "2026-10-29-whack-attack-v9-phone.html",
+   "kind": "file",
+   "path": "features/whack-attack/phone/2026-10-29-whack-attack-v9-phone.html",
+   "version": "v9",
+   "date": "2026-10-29",
+   "source": "latest.json",
+   "sha": "cd9b74eb",
+   "pushed": "2026-10-29T20:21:46+02:00",
+   "wrapped": true,
+   "bytes": 2983349
+  },
+  {
+   "id": "pop-n-drop",
+   "name": "Pop n Drop",
+   "branch": "loop/pop-n-drop",
+   "entry": "2026-11-09-pop-n-drop-unity-5-web",
+   "kind": "folder",
+   "path": "features/pop-n-drop/web/2026-11-09-pop-n-drop-unity-5-web",
+   "version": "unity-5",
+   "date": "2026-11-09",
+   "source": "latest.json",
+   "sha": "55e2400f",
+   "pushed": "2026-11-09T15:55:42+02:00",
+   "bytes": 21144490
+  }
+ ]
+}
